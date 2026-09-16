@@ -155,8 +155,13 @@ const destroyProxyAgent = (agent) => {
     agent.destroy();
 };
 
-// Accept http/https/socks5 protocols; regex intentionally loose to catch common typos only
-const PROXY_URL_REGEX = /^(https?|socks5):\/\/[^\s]+$/i
+// Accept http/https/socks5/socks5h; regex intentionally loose to catch common typos only.
+// socks5:// resolves the target hostname LOCALLY and hands the proxy an IP (socks-proxy-agent
+// sets `lookup = true`), so the DNS query leaves through the host's resolver while the TCP
+// goes through the proxy. socks5h:// delegates resolution to the proxy (curl semantics):
+// DNS and TCP share one egress. Measured on qwen-next 2026-09-16: 76/80 upstream connections
+// reached sing-box as bare IPs under socks5://.
+const PROXY_URL_REGEX = /^(https?|socks5h?):\/\/[^\s]+$/i
 
 /**
  * Validate proxy URL format.
@@ -243,6 +248,8 @@ const getOrCreateAgent = (url, account) => {
         const proxyUrl = new URL(url);
         switch (proxyUrl.protocol) {
             case 'socks5:':
+            case 'socks5h:':
+                // The agent reads the scheme itself: socks5h → shouldLookup=false.
                 agent = new SocksProxyAgent(proxyUrl);
                 break;
             case 'http:':
