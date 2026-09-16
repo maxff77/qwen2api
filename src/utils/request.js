@@ -649,9 +649,12 @@ const externalizeOversizedAgentContext = async (
  */
 const sendChatRequest = async (body, options = {}) => {
     // 获取可用的账户（包含 proxy 等完整字段）
+    // excludeEmails：本次 HTTP 请求里已经烧掉的账户（流中途 failover）——轮换器跳过它们，
+    // 即使它们对其他请求仍然可用。
+    const excludeEmails = Array.isArray(options.excludeEmails) ? options.excludeEmails : []
     const currentAccount = options.currentAccount?.token
         ? options.currentAccount
-        : accountManager.getAccount()
+        : accountManager.getAccount(excludeEmails)
     const currentToken = currentAccount ? currentAccount.token : null
 
     if (!currentToken) {
