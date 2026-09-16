@@ -528,12 +528,14 @@ const noteParseOutcome = (error) => {
     }
 }
 
-const assertParseBreakerClosed = () => {
+const assertParseBreakerClosed = (account) => {
     const remaining = parseBreakerRemainingSeconds()
     if (remaining <= 0) return
-    const error = new Error(`Qwen 文档解析服务失败: ${WAF_CAPTCHA_CODE} (breaker open, ${remaining}s left, upload skipped)`)
+    const egress = describeEgress(account)
+    const error = new Error(`Qwen 文档解析服务失败: ${WAF_CAPTCHA_CODE} (breaker open, ${remaining}s left, upload skipped, via ${egress})`)
     error.code = 'qwen_parse_waf_challenge'
     error.parseCode = WAF_CAPTCHA_CODE
+    error.egress = egress
     error.retryAfterSeconds = remaining
     error.breakerOpen = true
     throw error
@@ -582,7 +584,7 @@ const takeParseSlot = (account) => {
 const uploadAgentContextFile = async (text, authToken, account, options = {}) => {
     const content = Buffer.from(String(text || ''), 'utf8')
     if (content.length === 0) throw new Error('Agent 上下文为空')
-    assertParseBreakerClosed()
+    assertParseBreakerClosed(account)
     takeParseSlot(account)
     const filename = options.filename || `QWEN2API_AGENT_CONTEXT_${Date.now()}.txt`
     const uploaded = await uploadFileToQwenOss(content, filename, authToken, account)

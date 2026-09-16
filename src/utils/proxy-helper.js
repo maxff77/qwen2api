@@ -156,14 +156,21 @@ const resolveProxyUrl = (account) => {
 }
 
 /**
- * Egress identity for logs: the proxy URL an account's requests leave through,
- * credentials masked, or 'direct' when none applies. Qwen's WAF judges by egress
- * IP, not by account, so parse failures name this instead of the account.
+ * Egress identity for logs: `protocol//host:port` of the proxy an account's
+ * requests leave through, or 'direct' when none applies. Qwen's WAF judges by
+ * egress IP, not by account, so parse failures name this instead of the account.
+ * Credentials never make it out: the WHATWG parser drops userinfo, and the regex
+ * fallback (unparseable URL) masks up to the last `@` of the authority.
  */
 const describeEgress = (account) => {
     const url = resolveProxyUrl(account)
     if (!url) return 'direct'
-    return url.replace(/\/\/[^/@]*@/, '//***@')
+    try {
+        const parsed = new URL(url)
+        return `${parsed.protocol}//${parsed.host}`
+    } catch {
+        return url.replace(/\/\/[^/?#]*@/, '//***@')
+    }
 }
 
 /**
