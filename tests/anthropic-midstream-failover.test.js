@@ -23,6 +23,7 @@ const { Readable } = require('node:stream')
 const accountManager = require('../src/utils/account')
 const { handleAnthropicStream } = require('../src/controllers/anthropic.js')
 const { isTransportInterruption } = require('../src/utils/upstream-error.js')
+const { isRetryableNetworkError } = require('../src/utils/request.js')
 
 after(() => { accountManager.destroy() })
 
@@ -122,7 +123,7 @@ describe('mid-stream failover before the first content block', () => {
 
     await assert.rejects(
       handleAnthropicStream(res, ctxFor(sendRequest), streamOf([frame('Half an ans')], socketClose())),
-      (err) => err.code === 'UND_ERR_SOCKET'
+      (err) => err.code === 'UND_ERR_SOCKET' && err.failedAccountEmail === 'first@example.com'
     )
     assert.equal(sendRequest.calls.length, 0, 'no failover once the client has seen a block')
     assert.equal(emittedText(res.output), 'Half an ans', 'what was already sent stays sent')
@@ -137,6 +138,7 @@ describe('mid-stream failover before the first content block', () => {
     await assert.rejects(
       handleAnthropicStream(res, ctxFor(sendRequest), streamOf([], socketClose())),
       (err) => err.code === 'UND_ERR_SOCKET'
+        && err.failedAccountEmail === 'second@example.com'
     )
     assert.equal(sendRequest.calls.length, 1)
   })
@@ -195,5 +197,19 @@ describe('isTransportInterruption', () => {
     assert.equal(isTransportInterruption(Object.assign(new Error('quota'), { code: 'RateLimited' })), false)
     assert.equal(isTransportInterruption(null), false)
     assert.equal(isTransportInterruption('ECONNRESET'), false)
+  })
+})
+
+describe('isRetryableNetworkError (pre-response retry in sendRequest)', () => {
+  it('is isTransportInterruption plus the two connect-phase codes, with the same exclusions', () => {
+    for (const code of ['ECONNREFUSED', 'EAI_AGAIN', 'ECONNRESET', 'ETIMEDOUT', 'UND_ERR_SOCKET', 'EPIPE']) {
+      assert.equal(isRetryableNetworkError(Object.assign(new Error('x'), { code })), true, code)
+    }
+    assert.equal(isRetryableNetworkError(Object.assign(new TypeError('fetch failed'), { cause: { code: 'ECONNREFUSED' } })), true, 'connect code wrapped in cause')
+    assert.equal(isRetryableNetworkError(new Error('socket hang up')), true)
+    assert.equal(isRetryableNetworkError(Object.assign(new Error('refused'), { code: 'ECONNREFUSED', response: { status: 502 } })), false, 'an HTTP response is never a network error')
+    assert.equal(isRetryableNetworkError(Object.assign(new Error('canceled'), { code: 'ERR_CANCELED' })), false)
+    assert.equal(isRetryableNetworkError(Object.assign(new Error('quota'), { code: 'RateLimited' })), false)
+    assert.equal(isRetryableNetworkError(null), false)
   })
 })
