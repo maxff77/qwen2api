@@ -156,6 +156,17 @@ const resolveProxyUrl = (account) => {
 }
 
 /**
+ * Egress identity for logs: the proxy URL an account's requests leave through,
+ * credentials masked, or 'direct' when none applies. Qwen's WAF judges by egress
+ * IP, not by account, so parse failures name this instead of the account.
+ */
+const describeEgress = (account) => {
+    const url = resolveProxyUrl(account)
+    if (!url) return 'direct'
+    return url.replace(/\/\/[^/@]*@/, '//***@')
+}
+
+/**
  * Evict oldest entry from agent cache when over limit.
  * Map iteration order is insertion order, so first key is oldest.
  */
@@ -292,6 +303,7 @@ const fetchWithProxy = (url, fetchOptions = {}, account) => {
 
 module.exports = {
     resolveProxyUrl,
+    describeEgress,
     getProxyAgent,
     invalidateProxyAgent,
     getChatBaseUrl,
