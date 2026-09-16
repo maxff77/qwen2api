@@ -414,18 +414,28 @@ const parseUploadedTextFile = async (fileId, authToken, account, options = {}) =
         timeout: Math.max(1000, Number(options.timeoutMs) || 30000)
     }, account)
 
-    const parseResponse = await axios.post(`${baseUrl}/api/v2/files/parse`, { file_id: fileId }, requestConfig)
+    // Transport failures (dead proxy, reset, timeout) never reach the JSON checks in
+    // throwIfParseServiceFailed; tag them with the egress too, or a burnt proxy logs as a bare ECONNRESET.
+    const postViaEgress = async (path, body) => {
+        try {
+            return await axios.post(`${baseUrl}${path}`, body, requestConfig)
+        } catch (error) {
+            if (error && typeof error === 'object' && !error.egress) {
+                error.egress = egress
+                error.message = `${error.message} (${fileId}, via ${egress})`
+            }
+            throw error
+        }
+    }
+
+    const parseResponse = await postViaEgress('/api/v2/files/parse', { file_id: fileId })
     throwIfParseServiceFailed(parseResponse, fileId, egress)
 
     const maxAttempts = Math.max(1, Number(options.maxAttempts) || 30)
     const intervalMs = Math.max(50, Number(options.intervalMs) || 500)
     let lastStatus = ''
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-        const response = await axios.post(
-            `${baseUrl}/api/v2/files/parse/status`,
-            { file_id_list: [fileId] },
-            requestConfig
-        )
+        const response = await postViaEgress('/api/v2/files/parse/status', { file_id_list: [fileId] })
         throwIfParseServiceFailed(response, fileId, egress)
         const payload = unwrapApiData(response)
         const records = Array.isArray(payload) ? payload : (payload?.list || payload?.items || [])

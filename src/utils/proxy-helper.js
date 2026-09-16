@@ -76,7 +76,8 @@ const getProxyTransport = (proxyAgent) => {
     const requestDispatcher = dispatcher.compose(interceptors.redirect({ maxRedirections: 20 }), interceptors.decompress());
     // Never hand a Readable.toWeb/fromWeb-bridged body to a consumer: under Bun the bridge drops
     // undici's body error on a mid-body close, so the consumer hangs and the rejection escapes as a
-    // process crash (qwen-next died 6x in 2.5 h on 2026-09-16; tools/dev-probes/repro-bridge.js).
+    // process crash (qwen-next died 6x in 2.5 h on 2026-09-16; reproduced with a proxy that closes
+    // the socket mid-body).
     // Streams are returned as undici's own Node Readable; everything else is buffered right here.
     const fetch = async (url, options) => {
         const request = new globalThis.Request(url, options);
@@ -133,7 +134,7 @@ const getProxyTransport = (proxyAgent) => {
         if (!validateStatus || validateStatus(axiosResponse.status)) return axiosResponse;
         throw new axios.AxiosError(
             `Request failed with status code ${axiosResponse.status}`,
-            [axios.AxiosError.ERR_BAD_REQUEST, axios.AxiosError.ERR_BAD_RESPONSE][Math.floor(axiosResponse.status / 100) - 4],
+            axiosResponse.status >= 500 ? axios.AxiosError.ERR_BAD_RESPONSE : axios.AxiosError.ERR_BAD_REQUEST,
             requestConfig,
             null,
             axiosResponse
