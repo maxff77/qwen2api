@@ -32,7 +32,7 @@ test('a transport failure mid-stream carries the bytes and frames consumed so fa
 })
 
 test('a failure before any byte reports zero, not undefined', async () => {
-  const failing = Readable.from((async function* () { throw socketClose() })())
+  const failing = new Readable({ read() { this.destroy(socketClose()) } })
   await assert.rejects(consumeSSEStream(failing, async () => {}), (err) => {
     assert.equal(err.upstreamBytesRead, 0)
     assert.equal(err.upstreamEventCount, 0)
